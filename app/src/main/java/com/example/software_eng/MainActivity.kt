@@ -29,17 +29,17 @@ data class Device(
     val value: Double
 )
 
-// Base URL for your backend (using adb reverse so localhost is forwarded)
-const val BASE_URL = "http://localhost:5000"
+// Base URL for your backend – change this to your host's IP if needed
+const val BASE_URL = "http://192.168.0.100:5000"
 
 class MainActivity : ComponentActivity() {
 
-    // Configure OkHttp logging interceptor to see full HTTP details
+    // Configure OkHttp logging interceptor for full HTTP logs
     private val loggingInterceptor = HttpLoggingInterceptor().apply {
         level = HttpLoggingInterceptor.Level.BODY
     }
 
-    // Build the OkHttpClient with the interceptor
+    // Build OkHttpClient with the interceptor
     private val client: OkHttpClient = OkHttpClient.Builder()
         .addInterceptor(loggingInterceptor)
         .build()
@@ -85,7 +85,7 @@ class MainActivity : ComponentActivity() {
                             Text("Status: ${if (device.status) "ON" else "OFF"}")
                             Spacer(modifier = Modifier.height(8.dp))
                             Button(onClick = {
-                                toggleDevice(device.id, device.status) { result ->
+                                toggleDevice(device.id, device.name, device.status) { result ->
                                     statusMessage = result
                                     CoroutineScope(Dispatchers.IO).launch {
                                         val updatedDevices = fetchDevices()
@@ -106,7 +106,7 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    // Fetch devices from the backend; response is closed automatically with use { }
+    // Fetch devices from the backend; response is automatically closed using use { }
     private suspend fun fetchDevices(): List<Device> = withContext(Dispatchers.IO) {
         val request = Request.Builder()
             .url("$BASE_URL/device/all")
@@ -136,14 +136,19 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    // Toggle device status by sending a PATCH request with only the "status" key.
-    // According to the documentation, this is enough to update the device.
-    private fun toggleDevice(id: Int, currentStatus: Boolean, onResult: (String) -> Unit) {
+    // Toggle device status by sending a PATCH request.
+    // This function logs the JSON payload to both Logcat and the terminal.
+    private fun toggleDevice(id: Int, deviceName: String, currentStatus: Boolean, onResult: (String) -> Unit) {
         val newStatus = !currentStatus
-        // Build JSON payload with only "status"
-        val json = JSONObject().put("status", newStatus)
-        // Log the payload to verify it in Logcat
+        // Build JSON payload including both "name" and "status"
+        val json = JSONObject().apply {
+            put("name", deviceName)
+            put("status", newStatus)
+        }
+        // Log the payload to Logcat
         Log.d("ToggleDevice", "Sending JSON to /device/$id: $json")
+        // Also print it to the terminal
+        println("PATCH Payload for /device/$id: $json")
         val requestBody = json.toString().toRequestBody("application/json".toMediaType())
         val request = Request.Builder()
             .url("$BASE_URL/device/$id")
