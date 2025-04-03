@@ -29,8 +29,8 @@ data class Device(
     val value: Double
 )
 
-// Base URL for your backend – change this to your host's IP if needed
-const val BASE_URL = "http://192.168.0.100:5000"
+// change this for connection to remote server IPV4 address
+const val BASE_URL = "http://192.168.50.252:5001"
 
 class MainActivity : ComponentActivity() {
 
@@ -46,6 +46,10 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        //-> NEW:declaring the socjet manager here to run
+        SocketManager.connect()
+
         enableEdgeToEdge()
         setContent {
             Software_engTheme {
@@ -54,14 +58,30 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    //ACK ->just stops the socket when user is done
+    override fun onDestroy(){
+        super.onDestroy()
+        SocketManager.disconnect()
+    }
+
     @Composable
     fun DeviceUI() {
         var devices by remember { mutableStateOf<List<Device>>(emptyList()) }
         var statusMessage by remember { mutableStateOf("Loading...") }
+        //ACK -> gets data from insidethe ui and saves its state in case something happens
+        //used in the SocketManager.onUpdate function later below
+        val scope = rememberCoroutineScope()
 
         // Fetch devices when the UI first launches
         LaunchedEffect(Unit) {
             devices = fetchDevices()
+
+            //ACK -> NEW: delclare the onUpdate method from socketmanager for the updates
+            SocketManager.onUpdate {
+                scope.launch {
+                    devices = fetchDevices()
+                }
+            }
         }
 
         Scaffold(modifier = Modifier.fillMaxSize()) { paddingValues ->
@@ -85,8 +105,14 @@ class MainActivity : ComponentActivity() {
                             Text("Status: ${if (device.status) "ON" else "OFF"}")
                             Spacer(modifier = Modifier.height(8.dp))
                             Button(onClick = {
+                                //ACK -> added socketmanager.emit update to send the update oncethe toggles arepressed
                                 toggleDevice(device.id, device.name, device.status) { result ->
                                     statusMessage = result
+
+                                    //ACK -> emits the command to the server with the status handling the different status on or off
+                                    SocketManager.emitUpdate(device.name, !device.status)
+
+
                                     CoroutineScope(Dispatchers.IO).launch {
                                         val updatedDevices = fetchDevices()
                                         withContext(Dispatchers.Main) {
@@ -140,6 +166,7 @@ class MainActivity : ComponentActivity() {
     // This function logs the JSON payload to both Logcat and the terminal.
     private fun toggleDevice(id: Int, deviceName: String, currentStatus: Boolean, onResult: (String) -> Unit) {
         val newStatus = !currentStatus
+
         // Build JSON payload including both "name" and "status"
         val json = JSONObject().apply {
             put("name", deviceName)
@@ -149,6 +176,7 @@ class MainActivity : ComponentActivity() {
         Log.d("ToggleDevice", "Sending JSON to /device/$id: $json")
         // Also print it to the terminal
         println("PATCH Payload for /device/$id: $json")
+
         val requestBody = json.toString().toRequestBody("application/json".toMediaType())
         val request = Request.Builder()
             .url("$BASE_URL/device/$id")
